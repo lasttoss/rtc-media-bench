@@ -10,6 +10,10 @@ help: ## List the targets
 test: ## go test -race (no cluster, no network, no credentials)
 	go test -race ./internal/...
 
+.PHONY: test-integration
+test-integration: build ## Unit tests plus two real participants through the vendored SFU
+	@RTC_BENCH_SFU=$(PWD)/bin/sfu go test -race -cover -run . ./internal/rtc/ -v 2>&1 | grep -E "^(ok|FAIL|---|    client)" | sed 's/^/  /'
+
 .PHONY: coverage
 coverage: ## Print per-package coverage
 	@go test -cover ./internal/... | sed 's/^/  /'

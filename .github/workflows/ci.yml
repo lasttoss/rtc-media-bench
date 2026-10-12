@@ -47,6 +47,11 @@ jobs:
       # describes an unconfigured system. The first version of that patch compiled and did nothing.
       - name: the ICE configuration is actually applied
         run: SFU_BIN=$PWD/bin/sfu BENCH_BIN=$PWD/bin/bench ./lab/check-ice-config.sh
+      # Two real participants through the real SFU, as a test: proving the harness works is the
+      # whole point of the harness.
+      - name: two participants exchange media
+        run: RTC_BENCH_SFU=$PWD/bin/sfu go test -race -cover ./internal/rtc/ -run TestTwoParticipants -v
+
       # And the harness has to produce numbers: a config regression such as advertising every
       # interface moves p95 from ~20 ms to ~900 ms, which this catches.
       - name: the harness measures a working call
