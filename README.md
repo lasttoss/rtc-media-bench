@@ -107,7 +107,8 @@ Full entries, with symptoms, checks and evidence, are in **[`docs/runbook.md`](d
 SFU advertises. With `hostPort` exposure and one multiplexed UDP port the SFU offers exactly one
 candidate - the node's address on port 7882 - and the call connects in about twelve milliseconds. When
 media is exposed through a Service the advertised port and the listening port differ, and the call
-never starts while everything still reports healthy. The fault catalogue sits underneath, as measured.
+never starts while everything still reports healthy. The same call measured in containers costs
+about 10 ms more than on the host, and the fault catalogue sits underneath, as measured.
 
 ![rtc-media-bench: participants signal through a Service and send media to the address the SFU advertises; with hostPort and a single multiplexed UDP port one candidate is offered and joins take about twelve milliseconds, while exposing media through a Service makes the advertised and listening ports differ so no participant joins and no error is reported; the fault catalogue below lists an egress policy that did not reproduce, a translated media port that did, a pod advertising its own address that did, a pod deletion with and without a grace period that behaved identically, and advertising every interface costing 969 milliseconds at p95 against 18](docs/figures/rtc-media-bench-flow.png)
 

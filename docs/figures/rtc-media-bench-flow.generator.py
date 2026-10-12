@@ -160,6 +160,13 @@ svg.append(rect(MARGIN, strip_y, total_w - MARGIN * 2, strip_h))
 svg.append(text(MARGIN + PAD, strip_y + 26, "three rules this repository keeps, each one because breaking it produced a wrong number",
                 size=12.5, weight="600", fill=MUTED))
 chip_w = (total_w - MARGIN * 2 - PAD * 2 - 24) / 3
+# A generator that clips a claim is a generator that ships a figure nobody can read, and the clipping
+# is invisible in the HTML: it only shows in the export, which is the artefact people look at. This
+# fails instead, naming the claim that does not fit.
+for i, claim in enumerate(CLAIMS):
+    need = width(f"{i + 1}. {claim}", 11.5) + 20
+    if need > chip_w:
+        raise SystemExit(f"claim {i + 1} needs {need:.0f}px, the strip gives {chip_w:.0f}px: shorten it")
 for i, claim in enumerate(CLAIMS):
     cx = MARGIN + PAD + i * (chip_w + 12)
     svg.append(rect(cx, strip_y + 38, chip_w, 28, fill=TINT, stroke="#e8cdbd", rx=6))
@@ -171,7 +178,7 @@ meta = ('<!-- diagram-meta {"topic":"rtc-media-bench-flow","level":"runtime","ty
         '"sources":["charts/sfu/values.yaml","charts/sfu/templates/deployment.yaml","charts/sfu/templates/service.yaml",'
         '"charts/sfu/templates/networkpolicy.yaml","internal/rtc/client.go","internal/rtc/stats.go","cmd/bench/main.go",'
         '"lab/run-cluster.sh","lab/measure.sh","lab/measure-sfu-cpu.sh","lab/faults/02-media-through-a-service.sh",'
-        '"lab/faults/03-advertise-pod-ip.sh","lab/faults/04-restart-without-grace.sh","docs/runbook.md"],'
+        '"lab/faults/03-advertise-pod-ip.sh","lab/faults/04-restart-without-grace.sh","docs/runbook.md","Dockerfile","docker-compose.yml","Makefile"],'
         '"updated":"2026-10-12"} -->')
 
 page = f"""{meta}
