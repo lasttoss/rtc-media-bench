@@ -12,13 +12,15 @@ test: ## go test -race (no cluster, no network, no credentials)
 
 .PHONY: test-integration
 test-integration: build ## Unit tests plus two real participants through the vendored SFU
-	@RTC_BENCH_SFU=$(PWD)/bin/sfu go test -race -cover -run . ./internal/rtc/ -v 2>&1 | grep -E "^(ok|FAIL|---|    client)" | sed 's/^/  /'
+	# pipefail, because `go test | grep | sed` reports sed's exit status: a failing test joined a
+	# pipeline whose last command succeeded, and this target printed a red test as a green run.
+	@set -o pipefail; RTC_BENCH_SFU=$(PWD)/bin/sfu go test -race -cover -run . ./internal/rtc/ -v 2>&1 | grep -E "^(ok|FAIL|---|    client)" | sed 's/^/  /'
 
 .PHONY: coverage
 coverage: ## Print per-package coverage
-	@go test -cover ./internal/... | sed 's/^/  /'
-	@go test -coverprofile=/tmp/rtc-cover.out ./internal/... >/dev/null 2>&1 || true
-	@go tool cover -func=/tmp/rtc-cover.out 2>/dev/null | tail -1 | sed 's/^/  total: /'
+	@set -o pipefail; go test -cover ./internal/... | sed 's/^/  /'
+	@set -o pipefail; go test -coverprofile=/tmp/rtc-cover.out ./internal/... >/dev/null
+	@set -o pipefail; go tool cover -func=/tmp/rtc-cover.out | tail -1 | sed 's/^/  total: /'
 
 .PHONY: build
 build: ## Build the harness and the SFU
