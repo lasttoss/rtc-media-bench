@@ -52,6 +52,17 @@ commands above, and neither is a capacity claim.
 where the other two took 15 ms. Three later runs with the same configuration did not repeat it and the
 mechanism was not identified.
 
+**A second one, explained and fixed:** `TestTwoParticipantsExchangeMedia` failed every few runs on a
+loaded machine - `participant 0 never reached ICE connected`, then `close 1006` - and `-race` reported a
+data race in `internal/rtc/client.go`, where `Run` returned its `Result` while pion's ICE callbacks were
+still appending to it. The same code sent candidates as soon as `SetLocalDescription` began gathering,
+before the answer that explains them, and the SFU rejected them with `Failed to add ICE candidate:
+remote description is not set`. Both are fixed: the fields a callback owns are written under one lock and
+copied into the result once, and candidates wait for the answer. The loop that found it is the CI command
+run twelve times on a loaded machine - five failures before, none in the twenty runs since. The Makefile
+target that reported those failures as successes (`go test` piped into `grep`/`sed`, whose exit status
+won) sets `pipefail` now.
+
 ## The fault catalogue
 
 Full entries, with symptoms, checks and evidence, are in **[`docs/runbook.md`](docs/runbook.md)**.
@@ -106,7 +117,7 @@ The chart's most important value is not a resource limit - it is how media leave
 | `Dockerfile` | ✅ | two of them, both distroless nonroot: the SFU built from the vendored source, and the harness as an image so a load test can run inside the cluster |
 | Helm chart | ✅ | `charts/sfu`: Deployment, Service, NetworkPolicy on by default; every branch rendered and validated in CI |
 | `docs/figures/` + freshness gate | ✅ | `rtc-media-bench-flow` with `diagram-meta`; `make diagram` fails on a stale export |
-| tests + coverage in CI | ✅ | unit tests need no cluster, no network and no credentials; `make test-integration` puts two real participants through the vendored SFU (77% of the client code, against 25% without it), and `lab/check-ice-config.sh` fails unless the ICE flags reach the peer connection |
+| tests + coverage in CI | ✅ | unit tests need no cluster, no network and no credentials; `make test-integration` puts two real participants through the vendored SFU (78.8% of the client code, against 22.5% without it), and `lab/check-ice-config.sh` fails unless the ICE flags reach the peer connection |
 | README with what it demonstrates | ✅ | this file, with the numbers and their provenance |
 
 ## Licence

@@ -86,6 +86,26 @@ func Run(ctx context.Context, cfg Config) Result {
 		_ = ws.WriteJSON(map[string]string{"event": event, "data": data})
 	}
 
+	// Gathering starts inside SetLocalDescription, so a candidate can reach the socket before the
+	// answer that explains it. A server with no remote description answers "Failed to add ICE
+	// candidate: remote description is not set" and the session never establishes - this harness
+	// first saw that as an occasional "close 1006". Candidates wait for the answer.
+	var (
+		candMu     sync.Mutex
+		answerSent bool
+		heldCands  []string
+	)
+	sendCandidate := func(data string) {
+		candMu.Lock()
+		if !answerSent {
+			heldCands = append(heldCands, data)
+			candMu.Unlock()
+			return
+		}
+		candMu.Unlock()
+		write("candidate", data)
+	}
+
 	sample, err := ivf.Read(cfg.Sample)
 	if err != nil {
 		res.Err = err.Error()
@@ -99,16 +119,27 @@ func Run(ctx context.Context, cfg Config) Result {
 	}
 	defer func() { _ = pc.Close() }()
 
+	// The read loop and pion's callbacks run on their own goroutines and outlive the wait in the
+	// middle of this function, so every field they own is written under this lock and copied into the
+	// Result once, at the end. Before that, Run returned a Result an ICE callback was still appending
+	// to: the race detector reports it, and it failed the integration test every few runs.
 	var (
-		cmu       sync.Mutex
+		cbMu      sync.Mutex
 		localSeen = map[string]struct{}{}
+		iceMS     float64
+		offerMS   float64
+		local     []string
 	)
 	var disconnects atomic.Int64
 	var iceOnce sync.Once
 	pc.OnICEConnectionStateChange(func(s webrtc.ICEConnectionState) {
 		switch s {
 		case webrtc.ICEConnectionStateConnected, webrtc.ICEConnectionStateCompleted:
-			iceOnce.Do(func() { res.IceMS = ms() })
+			iceOnce.Do(func() {
+				cbMu.Lock()
+				iceMS = ms()
+				cbMu.Unlock()
+			})
 		case webrtc.ICEConnectionStateDisconnected, webrtc.ICEConnectionStateFailed:
 			disconnects.Add(1)
 		}
@@ -123,19 +154,19 @@ func Run(ctx context.Context, cfg Config) Result {
 			f := strings.Fields(init.Candidate)
 			if len(f) >= 6 {
 				addr := f[4] + ":" + f[5]
-				cmu.Lock()
+				cbMu.Lock()
 				if _, seen := localSeen[addr]; !seen {
 					localSeen[addr] = struct{}{}
-					res.LocalCandidates = append(res.LocalCandidates, addr)
+					local = append(local, addr)
 				}
-				cmu.Unlock()
+				cbMu.Unlock()
 			}
 		}
 		b, err := json.Marshal(c.ToJSON())
 		if err != nil {
 			return
 		}
-		write("candidate", string(b))
+		sendCandidate(string(b))
 	})
 
 	firstFrame := make(chan float64, 1)
@@ -192,7 +223,9 @@ func Run(ctx context.Context, cfg Config) Result {
 			case "offer":
 				offers++
 				if offers == 1 {
-					res.OfferMS = ms()
+					cbMu.Lock()
+					offerMS = ms()
+					cbMu.Unlock()
 				}
 				var offer webrtc.SessionDescription
 				if err := json.Unmarshal([]byte(msg.Data), &offer); err != nil {
@@ -224,7 +257,17 @@ func Run(ctx context.Context, cfg Config) Result {
 					readErr <- err
 					return
 				}
+				// The flag is set with the answer still under the lock, so a candidate being handed over
+				// right now is either held or written after it, never before.
+				candMu.Lock()
 				write("answer", string(b))
+				answerSent = true
+				held := heldCands
+				heldCands = nil
+				candMu.Unlock()
+				for _, c := range held {
+					write("candidate", c)
+				}
 			case "candidate":
 				var cand webrtc.ICECandidateInit
 				if err := json.Unmarshal([]byte(msg.Data), &cand); err != nil {
@@ -270,6 +313,13 @@ func Run(ctx context.Context, cfg Config) Result {
 		res.FirstFrameMS = t
 	default:
 	}
+
+	// The one copy of everything a callback owns, taken under the lock that guards it.
+	cbMu.Lock()
+	res.IceMS = iceMS
+	res.OfferMS = offerMS
+	res.LocalCandidates = append([]string(nil), local...)
+	cbMu.Unlock()
 
 	res.FramesSent = int(sent.Load())
 	res.Disconnects = int(disconnects.Load())

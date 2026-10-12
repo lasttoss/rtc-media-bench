@@ -33,15 +33,34 @@ func TestTwoParticipantsExchangeMedia(t *testing.T) {
 
 	// The SFU loads its landing page from the working directory at start-up, which is how a container
 	// built without index.html panics before it serves anything.
+	// The SFU's own output goes to a file rather than to /dev/null, which is where an
+	// exec.Command that sets no Stdout sends it. A run that fails with "close 1006" and no
+	// reason is a run nobody can act on; the file is printed when this test fails.
+	sfuLog, err := os.CreateTemp(t.TempDir(), "sfu-*.log")
+	if err != nil {
+		t.Fatalf("create the sfu's log: %v", err)
+	}
 	cmd := exec.Command(sfu, fmt.Sprintf("-addr=:%d", ws), fmt.Sprintf("-udp-mux-port=%d", mux),
 		"-advertise-ip=127.0.0.1")
 	cmd.Dir = filepath.Join("..", "..", "lab", "sfu")
+	cmd.Stdout, cmd.Stderr = sfuLog, sfuLog
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start sfu: %v", err)
 	}
+	exited := make(chan error, 1)
+	go func() { exited <- cmd.Wait() }()
+	_ = sfuLog.Close() // the child holds its own descriptor from here on
 	t.Cleanup(func() {
 		_ = cmd.Process.Kill()
-		_, _ = cmd.Process.Wait()
+		select {
+		case <-exited:
+		case <-time.After(2 * time.Second):
+		}
+		if !t.Failed() {
+			return
+		}
+		body, _ := os.ReadFile(sfuLog.Name())
+		t.Logf("the sfu's own output, which a failing run needs:\n%s", body)
 	})
 	waitForPort(t, ws)
 
@@ -67,6 +86,16 @@ func TestTwoParticipantsExchangeMedia(t *testing.T) {
 	case <-done:
 	case <-time.After(40 * time.Second):
 		t.Fatal("the participants never finished")
+	}
+
+	// A participant reporting "close 1006" is a symptom; the cause is usually the SFU having
+	// died, and saying so here is the difference between a diagnosis and a riddle.
+	select {
+	case err := <-exited:
+		body, _ := os.ReadFile(sfuLog.Name())
+		exited <- err
+		t.Fatalf("the sfu exited while the participants were joining (%v); its output was:\n%s", err, body)
+	default:
 	}
 
 	for i, r := range results {
