@@ -1,0 +1,53 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "sfu.fullname" . }}
+  labels:
+    {{- include "sfu.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "sfu.selectorLabels" . | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    # Signalling, media and probes all arrive on the pod's own ports.
+    - ports:
+        - port: {{ .Values.service.wsPort }}
+          protocol: TCP
+        - port: {{ .Values.ice.muxPort }}
+          protocol: UDP
+        {{- if .Values.ice.tcpFallback }}
+        - port: {{ .Values.ice.tcpPort }}
+          protocol: TCP
+        {{- end }}
+  egress:
+    {{- if .Values.networkPolicy.egressToPeers }}
+    # Media is not a request/response protocol. The checks ICE sends are new flows to addresses the
+    # pod never addressed first, so a policy written like an API allow-list - DNS plus the places we
+    # call - leaves the pod Running, Ready and silent.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 169.254.0.0/16
+      ports:
+        - port: {{ .Values.ice.muxPort }}
+          protocol: UDP
+        {{- if .Values.ice.tcpFallback }}
+        - port: {{ .Values.ice.tcpPort }}
+          protocol: TCP
+        {{- end }}
+    {{- end }}
+    # DNS. Signalling needs it; media does not. Worth keeping separate so the lab can close the
+    # first rule and show what breaks.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+{{- end }}

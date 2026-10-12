@@ -44,12 +44,15 @@ type Result struct {
 	OfferMS      float64 `json:"offer_ms"`
 	IceMS        float64 `json:"ice_ms"`         // "join" here: ICE found a usable path
 	FirstFrameMS float64 `json:"first_frame_ms"` // -1 when nobody else was publishing
-	FramesSent   int     `json:"frames_sent"`
-	Disconnects  int     `json:"disconnects"`
-	BitrateDown  float64 `json:"bitrate_down_kbps"`
-	BitrateUp    float64 `json:"bitrate_up_kbps"`
-	Sample       Sample  `json:"sample"`
-	Err          string  `json:"err,omitempty"`
+	// DiedMS is when this participant's call ended, whichever way it ended: the duration running
+	// out, or a signalling error. A fault that kills the server is measured by this number.
+	DiedMS      float64 `json:"died_ms"`
+	FramesSent  int     `json:"frames_sent"`
+	Disconnects int     `json:"disconnects"`
+	BitrateDown float64 `json:"bitrate_down_kbps"`
+	BitrateUp   float64 `json:"bitrate_up_kbps"`
+	Sample      Sample  `json:"sample"`
+	Err         string  `json:"err,omitempty"`
 	// LocalCandidates is every distinct address this participant offered. It is recorded because
 	// the first version of this harness labelled it "remote" and asserted on it: a gate that
 	// measures the wrong side of a connection passes whatever the other side does.
@@ -260,6 +263,7 @@ func Run(ctx context.Context, cfg Config) Result {
 	case err := <-readErr:
 		res.Err = "signalling: " + err.Error()
 	}
+	res.DiedMS = ms()
 
 	select {
 	case t := <-firstFrame:

@@ -1,0 +1,96 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "sfu.fullname" . }}
+  labels:
+    {{- include "sfu.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  # A media pod has state that matters: the rooms. Recreate keeps two pods from fighting over the
+  # same node port, which is what a rolling update would do with hostPort.
+  strategy:
+    type: {{ if eq .Values.exposure "hostPort" }}Recreate{{ else }}RollingUpdate{{ end }}
+  selector:
+    matchLabels:
+      {{- include "sfu.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "sfu.selectorLabels" . | nindent 8 }}
+      annotations:
+        {{- toYaml .Values.podAnnotations | nindent 8 }}
+    spec:
+      {{- if eq .Values.exposure "hostNetwork" }}
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      {{- end }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: sfu
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            {{- include "sfu.args" . | nindent 12 }}
+          env:
+            # The node's address, not the pod's. A peer outside the cluster cannot reach a pod CIDR,
+            # and a candidate nobody can reach is what a failed call looks like from the inside.
+            - name: NODE_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+          ports:
+            - name: ws
+              containerPort: {{ .Values.service.wsPort }}
+              protocol: TCP
+            {{- if eq .Values.ice.mode "mux" }}
+            - name: ice-udp
+              containerPort: {{ .Values.ice.muxPort }}
+              protocol: UDP
+              {{- if eq .Values.exposure "hostPort" }}
+              hostPort: {{ .Values.ice.muxPort }}
+              {{- end }}
+            {{- else }}
+            - name: ice-udp
+              containerPort: {{ .Values.ice.portMin }}
+              protocol: UDP
+            {{- end }}
+            {{- if .Values.ice.tcpFallback }}
+            - name: ice-tcp
+              containerPort: {{ .Values.ice.tcpPort }}
+              protocol: TCP
+              {{- if eq .Values.exposure "hostPort" }}
+              hostPort: {{ .Values.ice.tcpPort }}
+              {{- end }}
+            {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /
+              port: ws
+            initialDelaySeconds: 1
+            periodSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /
+              port: ws
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

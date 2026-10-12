@@ -1,0 +1,22 @@
+# The cluster configuration the lab measures against.
+#
+# This file exists because of a mistake worth remembering: `helm upgrade --set x=y` does not keep
+# the values from the previous release, it re-renders from the chart's defaults plus this upgrade's
+# flags. A fault script that set egressToPeers and nothing else silently turned the Service back
+# into a ClusterIP, and the three "reproduced" failures after it were the lab failing to deploy
+# rather than the fault it claimed to be showing.
+#
+# Every lab script therefore passes this file, and overrides exactly one thing.
+service:
+  type: NodePort
+  nodePort:
+    ws: 30080
+    ice: 30782
+    iceTCP: 30783
+exposure: hostPort
+advertise:
+  strategy: nodeIP
+networkPolicy:
+  enabled: true
+  egressToPeers: true
+terminationGracePeriodSeconds: 30

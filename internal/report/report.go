@@ -28,8 +28,11 @@ type Summary struct {
 	UploadSent   uint32    `json:"upload_packets"`
 	UploadLost   uint32    `json:"upload_lost"`
 	Disconnects  int       `json:"disconnects"`
-	Failed       []string  `json:"failed,omitempty"`
-	Detail       []Detail  `json:"detail,omitempty"`
+	// Survived is how long each participant's call lasted, in ms. With a fault that takes the server
+	// away, this is the number that says how long the damage took to arrive.
+	Survived []float64 `json:"survived_ms"`
+	Failed   []string  `json:"failed,omitempty"`
+	Detail   []Detail  `json:"detail,omitempty"`
 }
 
 // Detail is one participant's own timings, kept apart so a report can show which phase took the
@@ -87,6 +90,9 @@ func ms(v float64) string {
 func (s Summary) Text() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "participants      %d\n", s.Participants)
+	if len(s.Join) == 0 {
+		fmt.Fprintf(&b, "join              nobody established a connection\n")
+	}
 	fmt.Fprintf(&b, "join              p50 %s ms  p95 %s ms  (dial to ICE connected)\n",
 		ms(Percentile(s.Join, 50)), ms(Percentile(s.Join, 95)))
 	if len(s.FirstFrame) > 0 {
@@ -113,6 +119,10 @@ func (s Summary) Text() string {
 		fmt.Fprintf(&b, "                  upload n/a (no receiver reports observed; %d frames sent)\n", s.FramesSent)
 	}
 	fmt.Fprintf(&b, "disconnects       %d\n", s.Disconnects)
+	if len(s.Survived) > 0 {
+		fmt.Fprintf(&b, "survived          p50 %s ms  p95 %s ms  (how long the call lasted)\n",
+			ms(Percentile(s.Survived, 50)), ms(Percentile(s.Survived, 95)))
+	}
 	fmt.Fprintf(&b, "failed            %d\n", len(s.Failed))
 	for _, f := range s.Failed {
 		fmt.Fprintf(&b, "  - %s\n", f)

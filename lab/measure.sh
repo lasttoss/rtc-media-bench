@@ -53,19 +53,4 @@ fi
 cleanup
 trap - EXIT
 
-LABEL=$label python3 - <<'PY'
-import json, os
-d = json.load(open(f"lab/evidence/{os.environ['LABEL']}.json"))
-j = sorted(d.get("join_ms") or [])
-det = d.get("detail") or []
-adv = det[0].get("advertised") or [] if det else []
-ports = sorted({c.rsplit("/", 1)[0].rsplit(":", 1)[1] for c in adv})
-def rank(v, p):
-    return round(v[max(0, int(p / 100 * len(v)) - 1)], 1) if v else None
-print(f"{d['detail'][0]['index'] if det else '-'}", end=" ")
-print(f"join p50={rank(j, 50)} p95={rank(j, 95)} ms | advertised={len(adv)} ports={','.join(ports[:4])}"
-      f"{'...' if len(ports) > 4 else ''} | inbound={d.get('inbound_packets')} upload={d.get('upload_packets')}"
-      f" | up={round((d.get('up_kbps') or [0])[0])} kbps | failed={len(d.get('failed') or [])}")
-if d.get("failed"):
-    print("    ", d["failed"][0][:120])
-PY
+python3 lab/summary.py "lab/evidence/$label.json" "$label"

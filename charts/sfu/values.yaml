@@ -1,0 +1,76 @@
+image:
+  repository: rtc-media-bench/sfu
+  tag: local
+  pullPolicy: IfNotPresent
+
+# How media leaves the pod. This is the single most important value in this chart, because ICE
+# tells the peer which address AND which port to send to: an exposure mode that changes the port
+# between the pod and the outside breaks media in a way no probe will ever show.
+#
+#   hostPort    - bind the node's port directly (hostPort + node IP). Media works, one pod per node.
+#   hostNetwork - the pod shares the node's network. Same effect, also works, wider blast radius:
+#                 the pod now sees every interface and every address the node has.
+#   nodePort    - a Service translates the port. Signalling works and media does not: the peer is
+#                 told to use the container port, which nothing listens on outside the pod. Kept in
+#                 the chart on purpose: this is what a default Service-based deployment looks like,
+#                 and it is one of the four faults the lab reproduces.
+exposure: hostPort
+
+# Which address the SFU tells peers about.
+#   nodeIP   - status.hostIP, injected through the downward API (what hostPort and hostNetwork need)
+#   explicit - advertiseIP, for a NAT or a load balancer in front
+#   auto     - whatever pion decides: every interface the pod can see. Reproduces the slow join.
+advertise:
+  strategy: nodeIP
+  advertiseIP: ""
+
+ice:
+  # mux   - one UDP port for every candidate. The only shape a firewall with a finite port range
+  #         can be opened for, and the shape this lab measures.
+  # range - a pool of UDP ports, which is upstream's default shape and what most SFU tuning guides
+  #         assume. A Service cannot map a pool, so it only works when the port range is also the
+  #         node's range.
+  mode: mux
+  muxPort: 7882
+  portMin: 41000
+  portMax: 41020
+  # ICE-TCP, for a peer whose UDP is blocked entirely. Costs a listening socket and buys the calls
+  # that would otherwise not happen at all.
+  tcpFallback: true
+  tcpPort: 7883
+
+service:
+  type: ClusterIP
+  wsPort: 8080
+  # Only used when exposure is nodePort. The number matters: it is a real port on every node.
+  nodePort:
+    ws: 30080
+    ice: 30782
+    iceTCP: 30783
+
+# The default is on. A pod that answers decisions over the network is reachable by everything on it
+# unless something says otherwise, and "we will add the policy later" is how a media port ends up
+# open to the world.
+networkPolicy:
+  enabled: true
+  # The pod has to answer peers, and for UDP that means sending packets to addresses it did not
+  # initiate traffic to. Narrow this and ICE fails while every probe keeps passing: the fault the
+  # lab reproduces first.
+  egressToPeers: true
+
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+resources:
+  requests:
+    cpu: 100m
+    memory: 64Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+# Grace matters here more than in most charts: a hard kill drops every room on the pod and every
+# client reconnects at once. It is also fault four when it is zero.
+terminationGracePeriodSeconds: 30
+
+replicaCount: 1

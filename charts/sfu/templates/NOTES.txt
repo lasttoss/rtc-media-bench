@@ -1,0 +1,12 @@
+{{ include "sfu.fullname" . }} is exposed as: {{ .Values.exposure }}
+
+  signalling   ws://<node>.{{ .Values.service.wsPort }}/websocket
+  media        {{ if eq .Values.ice.mode "mux" }}one UDP port, {{ .Values.ice.muxPort }}{{ else }}UDP {{ .Values.ice.portMin }}-{{ .Values.ice.portMax }}{{ end }}
+  advertise    {{ .Values.advertise.strategy }}{{ if eq .Values.advertise.strategy "explicit" }} ({{ .Values.advertise.advertiseIP }}){{ end }}
+
+{{ if eq .Values.exposure "nodePort" }}WARNING: exposure=nodePort translates the media port, so the address the SFU advertises
+(host:{{ .Values.ice.muxPort }}) is not the address a peer can use (host:{{ .Values.service.nodePort.ice }}). Signalling
+works, the pod stays Ready, and media never arrives. This is fault three of the lab; see docs/runbook.md.
+{{ end }}{{ if not .Values.networkPolicy.egressToPeers }}WARNING: egressToPeers is off, so the SFU cannot send ICE checks to peers. The pod stays Running
+and Ready and no call connects. This is fault one of the lab; see docs/runbook.md.
+{{ end }}

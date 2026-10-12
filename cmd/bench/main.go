@@ -73,7 +73,9 @@ func main() {
 	} else {
 		fmt.Print(sum.Text())
 	}
-	if len(sum.Failed) > 0 {
+	// No failures and nobody connected is not success: it is a fault that the harness did not
+	// classify as an error, and a lab script that treats it as success gates nothing.
+	if len(sum.Failed) > 0 || (len(sum.Join) == 0 && sum.Participants > 0) {
 		os.Exit(1)
 	}
 }
@@ -95,8 +97,13 @@ func summarise(results []rtc.Result, want int) report.Summary {
 	sum := report.Summary{Participants: want}
 	for i, r := range results {
 		if r.Err != "" {
+			// The failure is recorded and the measurements are kept. A participant that joined, was
+			// in a call and then had the server taken away is the evidence a fault lab is built on;
+			// dropping its numbers because it ended in an error throws that evidence away.
 			sum.Failed = append(sum.Failed, fmt.Sprintf("participant %d: %s", i, r.Err))
-			continue
+		}
+		if r.DiedMS > 0 {
+			sum.Survived = append(sum.Survived, r.DiedMS)
 		}
 		if r.IceMS > 0 {
 			sum.Join = append(sum.Join, r.IceMS)

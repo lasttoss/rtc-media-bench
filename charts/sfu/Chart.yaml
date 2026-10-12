@@ -1,0 +1,6 @@
+apiVersion: v2
+name: sfu
+description: A WebRTC SFU (pion sfu-ws, vendored and patched in this repository) with the media path exposed honestly
+type: application
+version: 0.1.0
+appVersion: "6b76bbb5"

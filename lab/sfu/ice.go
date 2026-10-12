@@ -39,13 +39,10 @@ func newAPI() (*webrtc.API, error) {
 	// a veth pair - otherwise advertises an address that no client can use, and every client pays
 	// for it in connectivity checks before falling back to the one that works.
 
-	// Note on what is NOT configured here: restricting ICE to IPv4. SetNetworkTypes(UDP4) looks
-	// like it should do that, and with a UDPMux it does not - the mux socket covers every interface
-	// the machine has, so the peer still advertises IPv6 link-local candidates. Measured, not
-	// assumed: with -advertise-ip set to an unroutable address, two participants on one host still
-	// connected in 18 ms over an IPv6 link-local candidate nobody asked for. A cluster without IPv6
-	// has no such escape route, which is exactly why the same configuration fails there - see
-	// docs/runbook.md.
+	// Note on IPv4 and IPv6: SetNetworkTypes(UDP4) does not by itself stop IPv6 candidates when the
+	// mux enumerates every interface - measured, not assumed. Binding the mux on udp4 does, because
+	// then there is one socket and it cannot see IPv6 at all. Both facts matter in a cluster that
+	// runs no IPv6 and has one pod that insists on offering an address nobody can reach.
 	if *advertiseIP != "" {
 		// Advertise a different IP than the one the socket is bound to. This is what a NAT or a
 		// load balancer forces you to do - and doing it wrong is the single most common reason a
@@ -55,13 +52,19 @@ func newAPI() (*webrtc.API, error) {
 
 	switch {
 	case *udpMuxPort != 0:
-		// One socket, many candidates: the only shape that survives a Service or a firewall with
-		// a finite port range.
-		mux, err := ice.NewMultiUDPMuxFromPort(*udpMuxPort)
+		// One socket, many candidates: the only shape that survives a firewall with a finite port
+		// range. It is bound explicitly on the IPv4 wildcard rather than per interface.
+		//
+		// ice.NewMultiUDPMuxFromPort looks like the obvious call and is a trap in a cluster: it
+		// binds one socket per interface and fails the whole process if any single bind fails. A pod
+		// with an IPv6 link-local address fails on that address, so the container exits at start-up,
+		// Kubernetes restarts it, and the pod is reported Running while it is in a crash loop -
+		// observed here as "udp mux on 7882: bind: cannot assign requested address".
+		conn, err := net.ListenUDP("udp4", &net.UDPAddr{Port: *udpMuxPort})
 		if err != nil {
 			return nil, fmt.Errorf("udp mux on %d: %w", *udpMuxPort, err)
 		}
-		se.SetICEUDPMux(mux)
+		se.SetICEUDPMux(ice.NewUDPMuxDefault(ice.UDPMuxParams{UDPConn: conn}))
 	case *udpPortMin != 0:
 		se.SetEphemeralUDPPortRange(uint16(*udpPortMin), uint16(*udpPortMax))
 	}

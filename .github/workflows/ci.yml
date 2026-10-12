@@ -1,0 +1,72 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27"
+      # No cluster, no credentials, no external service: what a reviewer can run in a minute.
+      - run: go test -race -cover ./internal/...
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27"
+      - run: gofmt -l . | grep -v '^lab/sfu' | tee /dev/stderr | wc -l | grep -q '^0$'
+      - run: go vet ./...
+
+  chart:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      # Every branch is rendered, including the one that is deliberately broken: a fault lab whose
+      # broken configuration is never rendered is a fault lab that no longer reproduces anything.
+      - run: ./lab/chart-check.sh
+
+  harness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27"
+      - run: make build
+      # The vendored SFU's ICE flags have to reach the peer connection, or every measurement below it
+      # describes an unconfigured system. The first version of that patch compiled and did nothing.
+      - name: the ICE configuration is actually applied
+        run: SFU_BIN=$PWD/bin/sfu BENCH_BIN=$PWD/bin/bench ./lab/check-ice-config.sh
+      # And the harness has to produce numbers: a config regression such as advertising every
+      # interface moves p95 from ~20 ms to ~900 ms, which this catches.
+      - name: the harness measures a working call
+        run: |
+          SFU_BIN=$PWD/bin/sfu BENCH_BIN=$PWD/bin/bench \
+            ./lab/measure.sh ci-join 3 6s -udp-mux-port 17882 -advertise-ip 127.0.0.1 | tee /tmp/m.txt
+          python3 - <<'PY'
+          import json
+          d = json.load(open("lab/evidence/ci-join.json"))
+          join = d.get("join_ms") or []
+          assert len(join) == 3, f"only {len(join)} of 3 participants connected"
+          assert d.get("inbound_packets", 0) > 0, "no media was received"
+          p95 = max(join)
+          assert p95 < 500, f"join p95 {p95:.0f} ms: the candidate list or the mux is wrong"
+          print(f"3 participants, join p95 {p95:.1f} ms, {d['inbound_packets']} packets received")
+          PY
+
+  verify-patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Needs network: the point is to re-derive the vendored source from upstream and diff it.
+      - run: ./lab/verify-patch.sh
