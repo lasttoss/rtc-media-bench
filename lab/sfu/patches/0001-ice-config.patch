@@ -1,0 +1,133 @@
+--- a/main.go
++++ b/main.go
+@@ -24,8 +24,18 @@
+ 
+ // nolint
+ var (
+-	addr     = flag.String("addr", ":8080", "http service address")
+-	upgrader = websocket.Upgrader{
++	addr = flag.String("addr", ":8080", "http service address")
++
++	// ICE configuration. Upstream sfu-ws leaves this to pion's defaults, which is a random UDP
++	// port per candidate - fine on a laptop, unusable behind a Service. These four flags are the
++	// whole local patch (see patches/0001-ice-config.patch): they are also the knobs this lab
++	// varies on purpose, because three of the four ways a call loses its connection live here.
++	udpMuxPort  = flag.Int("udp-mux-port", 0, "single UDP port carrying all ICE traffic (multiplexed); 0 disables")
++	udpPortMin  = flag.Int("udp-port-min", 0, "first port of an ephemeral ICE UDP range; 0 disables")
++	udpPortMax  = flag.Int("udp-port-max", 0, "last port of an ephemeral ICE UDP range")
++	advertiseIP = flag.String("advertise-ip", "", "IP to advertise in ICE candidates instead of the pod IP (NAT 1:1)")
++	iceTCPPort  = flag.Int("ice-tcp-port", 0, "TCP port for ICE-TCP fallback; 0 disables")
++	upgrader    = websocket.Upgrader{
+ 		CheckOrigin: func(r *http.Request) bool { return true },
+ 	}
+ 	indexTemplate = &template.Template{}
+@@ -52,6 +62,14 @@
+ 	// Parse the flags passed to program
+ 	flag.Parse()
+ 
++	// The API reads those flags, so it has to be built after them and before any handler runs.
++	// Built the other way round it is a valid API with default ICE settings: it starts, it
++	// serves, and every flag about ports and addresses is quietly ignored.
++	if err := setupAPI(); err != nil {
++		log.Errorf("Could not configure ICE: %v", err)
++		os.Exit(1)
++	}
++
+ 	// Init other state
+ 	trackLocals = map[string]*webrtc.TrackLocalStaticRTP{}
+ 
+@@ -248,8 +266,11 @@
+ 	// When this frame returns close the Websocket
+ 	defer c.Close() //nolint
+ 
+-	// Create new PeerConnection
+-	peerConnection, err := webrtc.NewPeerConnection(webrtc.Configuration{})
++	// Create new PeerConnection. It is built through the API configured in main(), which is where
++	// the ICE settings from the command line live. Using webrtc.NewPeerConnection here instead
++	// silently ignores every ICE flag: the process still runs, still serves, and offers the wrong
++	// addresses and ports, which is exactly the failure this lab exists to reproduce.
++	peerConnection, err := api.NewPeerConnection(webrtc.Configuration{})
+ 	if err != nil {
+ 		log.Errorf("Failed to creates a PeerConnection: %v", err)
+ 
+--- a/ice.go
++++ b/ice.go
+@@ -0,0 +1,78 @@
++// SPDX-FileCopyrightText: 2026 The Pion community <https://pion.ly>
++// SPDX-License-Identifier: MIT
++
++//go:build !js
++
++package main
++
++import (
++	"fmt"
++	"net"
++
++	"github.com/pion/ice/v4"
++	"github.com/pion/webrtc/v4"
++)
++
++// api is the WebRTC API every peer connection goes through. It is built once in main() after the
++// flags are parsed.
++var api *webrtc.API
++
++// setupAPI builds the API and stores it for the signalling handler.
++func setupAPI() error {
++	a, err := newAPI()
++	if err != nil {
++		return err
++	}
++	api = a
++	return nil
++}
++
++// newAPI builds the WebRTC API with the ICE configuration from the command line.
++//
++// Local addition to upstream sfu-ws (see patches/0001-ice-config.patch). Nothing here touches
++// media: it decides which addresses and ports ICE offers, which is the part a cluster, a
++// firewall and a NAT each have an opinion about.
++func newAPI() (*webrtc.API, error) {
++	var se webrtc.SettingEngine
++
++	// Offer IPv4 unless IPv6 is asked for. A host with a link-local IPv6 address - a docker bridge,
++	// a veth pair - otherwise advertises an address that no client can use, and every client pays
++	// for it in connectivity checks before falling back to the one that works.
++
++	// Note on what is NOT configured here: restricting ICE to IPv4. SetNetworkTypes(UDP4) looks
++	// like it should do that, and with a UDPMux it does not - the mux socket covers every interface
++	// the machine has, so the peer still advertises IPv6 link-local candidates. Measured, not
++	// assumed: with -advertise-ip set to an unroutable address, two participants on one host still
++	// connected in 18 ms over an IPv6 link-local candidate nobody asked for. A cluster without IPv6
++	// has no such escape route, which is exactly why the same configuration fails there - see
++	// docs/runbook.md.
++	if *advertiseIP != "" {
++		// Advertise a different IP than the one the socket is bound to. This is what a NAT or a
++		// load balancer forces you to do - and doing it wrong is the single most common reason a
++		// call connects, then dies: the candidate looks valid and is never reachable.
++		se.SetNAT1To1IPs([]string{*advertiseIP}, webrtc.ICECandidateTypeHost)
++	}
++
++	switch {
++	case *udpMuxPort != 0:
++		// One socket, many candidates: the only shape that survives a Service or a firewall with
++		// a finite port range.
++		mux, err := ice.NewMultiUDPMuxFromPort(*udpMuxPort)
++		if err != nil {
++			return nil, fmt.Errorf("udp mux on %d: %w", *udpMuxPort, err)
++		}
++		se.SetICEUDPMux(mux)
++	case *udpPortMin != 0:
++		se.SetEphemeralUDPPortRange(uint16(*udpPortMin), uint16(*udpPortMax))
++	}
++
++	if *iceTCPPort != 0 {
++		ln, err := net.ListenTCP("tcp4", &net.TCPAddr{Port: *iceTCPPort})
++		if err != nil {
++			return nil, fmt.Errorf("ice tcp listener on %d: %w", *iceTCPPort, err)
++		}
++		se.SetICETCPMux(ice.NewTCPMuxDefault(ice.TCPMuxParams{Listener: ln}))
++	}
++
++	return webrtc.NewAPI(webrtc.WithSettingEngine(se)), nil
++}

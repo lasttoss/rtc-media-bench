@@ -1,0 +1,4 @@
+bin/
+lab/evidence/*.json
+lab/evidence/*.log
+lab/evidence/*.pid
