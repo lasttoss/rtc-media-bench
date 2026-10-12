@@ -85,7 +85,7 @@ SFU = Block("SFU in a pod", "pion sfu-ws, vendored + one ICE patch", [
     ("NetworkPolicy on by default", True),
 ])
 GOOD = Block("this is what makes a call", "measured, kind cluster", [
-    ("advertised   172.19.0.2:7882/host   1 candidate", True),
+    ("advertised   172.19.0.2:7882/host   1 host candidate", True),
     ("join p50 11.9 ms   p95 12.3 ms", True),
     ("SFU CPU 50.7 ms/participant  = 1.0% core", True),
 ])
@@ -105,7 +105,7 @@ FAULTS = Block("the fault catalogue, as measured", "docs/runbook.md", [
     ("2  media port translated by a Service     reproduced", True),
     ("3  advertise the pod's own address        reproduced", True),
     ("4  pod deleted, grace period 0 or 30      reproduced", True),
-    ("5  advertise every interface              p95 969 ms vs 18 ms", True),
+    ("5  advertise every interface              20 candidates, p95 434 ms", True),
 ])
 CLAIMS = [
     "a healthy websocket and a Ready pod say nothing about media",

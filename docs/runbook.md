@@ -157,12 +157,18 @@ fast.
 IPv6 addresses offers dozens, most of them unreachable from the peer. Every one costs a connectivity
 check that fails before the working candidate is tried.
 
-**Evidence measured here** (loopback, 3 participants, `make measure`):
+**Evidence measured here** (loopback, 3 participants, two runs each, `make measure`):
 
-| advertised | join p50 | join p95 | candidates offered |
+| advertised | join p50 | join p95 | host candidates offered |
 |---|---|---|---|
-| every interface (pion's default) | 149 ms | **969 ms** | 45 |
-| one address (`-advertise-ip`) | 16.8 ms | **18.3 ms** | 3 |
+| every interface (pion's default) | 160-427 ms | **315-434 ms** | 20 |
+| one address (`-advertise-ip`) | 30-43 ms | **44-53 ms** | 1 |
+
+An earlier measurement of this same comparison read `969 ms` against `18 ms`. Those numbers were
+taken before the fix in entry 6 below, which replaced a per-interface mux bind with a single `udp4`
+socket: the difference was mostly IPv6 link-local candidates that no peer could use, and removing them
+cut the penalty from about fifty times to about seven. The smaller number is the honest one, and it is
+still worth advertising one address.
 
 A third run in the cluster had one participant take 9.2 s where the other two took 15 ms; the same
 run configuration did not do it again in three later attempts. Recorded as an outlier with no
@@ -197,7 +203,7 @@ previous container's log. A "Running" pod with restarts is a pod that has never 
 | measurement | value | how |
 |---|---|---|
 | join p50 / p95, cluster, one candidate | 11.9 / 12.3 ms | kind, 3 participants, `make lab-bench` |
-| join p50 / p95, every interface advertised | 149 / 969 ms | loopback, 3 participants, `make measure` |
+| join p50 / p95, every interface advertised | 160-427 / 315-434 ms | loopback, 3 participants, two runs |
 | SFU CPU per participant | 50.7 ms cpu = 1.0 % of one core | cgroup `cpu.stat`, 3 participants, 15.8 s |
 | packets received, 3 participants, 8 s run | 436 | `inbound_packets` from the harness |
 | send-side loss (RTCP receiver reports) | not observed | reported as `n/a`, never as 0 |

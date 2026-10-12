@@ -36,9 +36,10 @@ make verify-patch # re-derive the vendored SFU from upstream and diff it
 
 | measurement | value | how it was produced |
 |---|---|---|
-| join p50 / p95, one advertised candidate | **11.9 / 12.3 ms** | kind, 3 participants, `make lab-bench` |
-| join p50 / p95, every interface advertised | 149 / **969 ms** | loopback, 3 participants, `make measure` |
-| candidates offered, per case | 1 vs 45 | `advertised` from the nominated pair's stats |
+| join p50 / p95, one advertised candidate | **11.9 / 12.3 ms** | kind cluster, 3 participants, `make lab-bench` |
+| join p50 / p95, one address, loopback | 30-43 / 44-53 ms | two runs, 3 participants, `make measure` |
+| join p50 / p95, every interface advertised | 160-427 / **315-434 ms** | two runs, 3 participants, `make measure` |
+| host candidates offered, per case | **1 vs 20** | `advertised` from the nominated pair's stats |
 | SFU CPU per participant | **50.7 ms = 1.0 % of one core** | cgroup `cpu.stat` of the pod, 3 participants, 15.8 s |
 | packets received, 3 participants, 8 s | 436 | `inbound_packets` |
 | send-side packet loss | **n/a** | RTCP receiver reports did not populate here |
@@ -60,7 +61,7 @@ Full entries, with symptoms, checks and evidence, are in **[`docs/runbook.md`](d
 | 2 | media exposed through a Service | **reproduced**: advertised `172.19.0.2:7882`, listening on node port `30782`, `join n=0`, no media, **and no error anywhere** |
 | 3 | the SFU advertises the pod's own address | **reproduced**: candidate `10.244.0.17:7882`, `join n=0`, `failed 0` - a fault that fails silently |
 | 4 | pod deleted with and without a grace period | **reproduced**: calls survived 8.2-9.1 s **both times**; the grace period changed nothing to within 50 ms, because a Go program with no `SIGTERM` handler exits on it immediately |
-| 5 | advertising every interface | 45 candidates, join p95 **969 ms** against **18 ms** for one |
+| 5 | advertising every interface | 20 host candidates, join p95 **315-434 ms** against **44-53 ms** for one |
 
 ## How it works
 
