@@ -69,6 +69,19 @@ jobs:
           print(f"3 participants, join p95 {p95:.1f} ms, {d['inbound_packets']} packets received")
           PY
 
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # The image is a deliverable, so the image is run: the harness has to print its own usage,
+      # and the distroless claim is checked rather than asserted in a sentence.
+      - name: the image runs and carries no shell
+        run: make image
+      # And the containerised lab has to produce a measurement, because a compose file that
+      # nothing runs is a file that stopped working some time ago without anyone noticing.
+      - name: the containerised lab measures a real call
+        run: make compose-bench
+
   verify-patch:
     runs-on: ubuntu-latest
     steps:

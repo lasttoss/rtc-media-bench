@@ -1,0 +1,28 @@
+# The two halves of the lab as containers: the fan-out SFU, and the harness that measures it.
+#
+# Both use the host's network stack, and that is not a shortcut. This repository exists to report
+# how long a participant takes to join and how many packets arrived; putting a bridge network and
+# a NAT hop between the two containers would change the number being reported. `make up` therefore
+# brings up the SFU in a container on the host's network, and `make compose-bench` runs the
+# harness the same way, so its numbers are comparable with `make demo`.
+services:
+  sfu:
+    image: rtc-media-bench:local
+    build: .
+    entrypoint: ["/usr/local/bin/sfu"]
+    # The multiplexed UDP port is the whole point of the vendored patch: one port for every
+    # participant, so the deployment story is a single port rather than a range.
+    command: ["-addr", ":17880", "-udp-mux-port", "17882", "-advertise-ip", "127.0.0.1"]
+    network_mode: host
+    restart: unless-stopped
+
+  bench:
+    image: rtc-media-bench:local
+    build: .
+    entrypoint: ["/usr/local/bin/bench"]
+    command: ["-url", "ws://127.0.0.1:17880/websocket", "-clients", "3", "-duration", "10s"]
+    network_mode: host
+    depends_on: [sfu]
+    # A profile so that `docker compose up -d` starts the SFU and stops there: the harness is a
+    # run, not a daemon.
+    profiles: ["bench"]

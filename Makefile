@@ -28,7 +28,7 @@ build: ## Build the harness and the SFU
 	go build -o bin/sfu ./lab/sfu
 
 .PHONY: bench
-bench: build ## Join 3 participants and print the table
+bench: build ## Join 3 participants and print the table (host, no container)
 	@./bin/bench -clients 3 -duration 10s
 
 .PHONY: sfu
@@ -54,6 +54,55 @@ demo: build chart-check verify-sfu ## One command, no cluster and no credentials
 	@echo "== measuring on loopback: every interface advertised vs one =="
 	@SFU_BIN=$(PWD)/bin/sfu BENCH_BIN=$(PWD)/bin/bench ./lab/measure.sh mux-advertised 3 6s -udp-mux-port $(MUX_PORT) -advertise-ip 127.0.0.1
 	@echo "  (the chart and the vendor patch were checked above; lab-up brings up the cluster)"
+
+COMPOSE ?= docker compose
+IMAGE_NAME ?= rtc-media-bench:local
+
+.PHONY: up
+up: ## Start the SFU in a container, on the host's network, and wait until it answers
+	@$(COMPOSE) up -d --build >/dev/null
+	@ok=0; for i in $$(seq 1 40); do \
+	  if curl -fsS http://127.0.0.1:$(WS_PORT)/ >/dev/null 2>&1; then ok=1; break; fi; \
+	  if [ "$$($(COMPOSE) ps -q sfu | xargs -r docker inspect -f '{{.State.Running}}' 2>/dev/null)" != "true" ]; then break; fi; \
+	  sleep 0.5; \
+	done; \
+	if [ $$ok -eq 1 ]; then echo "  the SFU answers on :$(WS_PORT)"; else \
+	  echo "  the SFU did not come up:"; $(COMPOSE) logs sfu 2>&1 | tail -6 | sed 's/^/    /'; $(COMPOSE) down --remove-orphans >/dev/null 2>&1; exit 1; fi
+
+.PHONY: down
+down: ## Stop the containers and remove them
+	@$(COMPOSE) down --remove-orphans
+
+.PHONY: logs
+logs: ## Follow the container logs
+	@$(COMPOSE) logs -f
+
+.PHONY: compose-bench
+compose-bench: up ## Measure through the containerised SFU, then stop it
+	@$(COMPOSE) --profile bench run --rm bench 2>&1 | tee /tmp/compose-bench.txt | sed 's/^/  /'
+	@$(COMPOSE) down --remove-orphans
+	@grep -qE "join p95|p95" /tmp/compose-bench.txt || { echo "  the containerised harness printed no measurement"; exit 1; }
+
+.PHONY: image
+image: ## Build the image, then assert it runs and carries no shell
+	@docker build -q -t $(IMAGE_NAME) . >/dev/null && echo "  built $(IMAGE_NAME)"
+	@set +e; out=$$(docker run --rm $(IMAGE_NAME) -help 2>&1); code=$$?; set -e; \
+	  printf '%s\n' "$$out" | tail -4 | sed 's/^/  /'; \
+	  printf '%s\n' "$$out" | grep -q -- "-clients" || { echo "  the harness did not print its own usage"; exit 1; }; \
+	  echo "  the harness binary ran (exit $$code, usage printed)"
+	@if docker run --rm --entrypoint /bin/sh $(IMAGE_NAME) -c true >/dev/null 2>&1; then \
+	  echo "  the image has /bin/sh: it is not distroless"; exit 1; \
+	else echo "  no /bin/sh in the image: as intended"; fi
+	@echo "== the SFU in the image serves its page (it is the half that needs an asset) =="
+	@docker rm -f rtc-image-check >/dev/null 2>&1 || true
+	@set +e; out=$$(docker run -d --name rtc-image-check --network host --entrypoint /usr/local/bin/sfu $(IMAGE_NAME) -addr :17890 -udp-mux-port 17892 -advertise-ip 127.0.0.1); set -e; \
+	  ok=0; for i in $$(seq 1 30); do \
+	    if curl -fsS http://127.0.0.1:17890/ 2>/dev/null | grep -qi "rtc\|bench\|websocket"; then ok=1; break; fi; \
+	    if [ "$$(docker inspect -f '{{.State.Running}}' rtc-image-check 2>/dev/null)" != "true" ]; then break; fi; \
+	    sleep 0.5; \
+	  done; \
+	  if [ $$ok -eq 1 ]; then echo "  the SFU served its page on :17890"; else echo "  the SFU did not serve its page"; docker logs rtc-image-check 2>&1 | tail -5 | sed 's/^/    /'; docker rm -f rtc-image-check >/dev/null 2>&1; exit 1; fi; \
+	  docker rm -f rtc-image-check >/dev/null 2>&1 || true
 
 .PHONY: chart-check
 chart-check: ## Lint and render every branch of the chart, then validate it

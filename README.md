@@ -22,6 +22,32 @@ make test-integration  # two real participants through the real SFU, as a test
 make verify-patch # re-derive the vendored SFU from upstream and diff it
 ```
 
+## Two ways to run the lab
+
+`make demo` and `make measure` run on the host, and they are where the numbers in this README come
+from. `make up` runs the same two binaries as containers instead, which is one command on a machine
+that has Docker and nothing else:
+
+```
+make up            # the SFU in a container, on the host's network, waiting until it answers
+make compose-bench # three participants through it, then it stops the container
+make down          # or leave it running
+make image         # build the image, then assert it runs and carries no shell
+```
+
+Both use `network_mode: host` on purpose. A bridge network puts a NAT hop and a virtual interface
+between the participants and the SFU, in the middle of the thing being measured. It is still not
+free: measured on one machine, host join p95 was 50.0 / 33.5 / 36.1 ms over three runs and the
+containerised path was 55.0 / 48.8 / 41.0 ms, so the container costs roughly ten milliseconds of
+join time. That is why the table above is measured on the host, and why the compose path exists for
+anyone who wants the lab up without installing Go.
+
+`make image` asserts three things rather than assuming them: the harness binary runs (it prints its
+own usage), the image has no `/bin/sh` (it is distroless), and the SFU inside it serves its page -
+that last one because the SFU reads `index.html` from its working directory, which is exactly the
+kind of file an image forgets until a container start-loops.
+
+
 ## What this demonstrates
 
 | capability | how it is done here | where |
