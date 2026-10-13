@@ -144,7 +144,7 @@ The chart's most important value is not a resource limit - it is how media leave
 | `Dockerfile` | ✅ | two of them, both distroless nonroot: the SFU built from the vendored source, and the harness as an image so a load test can run inside the cluster |
 | Helm chart | ✅ | `charts/sfu`: Deployment, Service, NetworkPolicy on by default; every branch rendered and validated in CI |
 | `docs/figures/` + freshness gate | ✅ | `rtc-media-bench-flow` with `diagram-meta`; `make diagram` fails on a stale export |
-| tests + coverage in CI | ✅ | unit tests need no cluster, no network and no credentials; `make test-integration` puts two real participants through the vendored SFU (78.8% of the client code, against 22.5% without it), and `lab/check-ice-config.sh` fails unless the ICE flags reach the peer connection |
+| tests + coverage in CI | ✅ | unit tests need no cluster, no network and no credentials; `make test-integration` puts two real participants through the vendored SFU (78% of the client code, against 22.5% without it), and `lab/check-ice-config.sh` fails unless the ICE flags reach the peer connection |
 | README with what it demonstrates | ✅ | this file, with the numbers and their provenance |
 
 ## Licence

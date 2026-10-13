@@ -29,31 +29,16 @@ build: ## Build the harness and the SFU
 
 .PHONY: bench
 bench: build ## Join 3 participants and print the table (host, no container)
-	@./bin/bench -clients 3 -duration 10s
-
-.PHONY: sfu
-sfu: build ## Run the SFU locally on one multiplexed UDP port
-	@cd lab/sfu && ../bin/sfu -addr :$(WS_PORT) -udp-mux-port $(MUX_PORT) -advertise-ip 127.0.0.1
-
-.PHONY: verify-sfu
-verify-sfu: build ## Assert the vendored SFU's ICE flags reach the peer connection
-	@SFU_BIN=$(PWD)/bin/sfu BENCH_BIN=$(PWD)/bin/bench ./lab/check-ice-config.sh
-
-.PHONY: verify-patch
-verify-patch: ## Rebuild lab/sfu from upstream at the pinned commit and check it matches
-	@./lab/verify-patch.sh
-
-.PHONY: measure
-measure: build ## Run the ICE comparison matrix into lab/evidence/
-	@SFU_BIN=$(PWD)/bin/sfu BENCH_BIN=$(PWD)/bin/bench ./lab/measure.sh mux-all-interfaces 3 10s -udp-mux-port $(MUX_PORT)
-	@SFU_BIN=$(PWD)/bin/sfu BENCH_BIN=$(PWD)/bin/bench ./lab/measure.sh mux-advertised 3 10s -udp-mux-port $(MUX_PORT) -advertise-ip 127.0.0.1
-
-.PHONY: demo
-demo: build chart-check verify-sfu ## One command, no cluster and no credentials: build, validate, measure
-	@echo
-	@echo "== measuring on loopback: every interface advertised vs one =="
-	@SFU_BIN=$(PWD)/bin/sfu BENCH_BIN=$(PWD)/bin/bench ./lab/measure.sh mux-advertised 3 6s -udp-mux-port $(MUX_PORT) -advertise-ip 127.0.0.1
-	@echo "  (the chart and the vendor patch were checked above; lab-up brings up the cluster)"
+	# A participant needs something to join: this target used to dial ws://127.0.0.1:17880 with
+	# nothing listening, and whatever else held that port answered the WebSocket upgrade with a plain
+	# HTTP response. So the SFU starts here, the target waits for its signalling port, and it is
+	# stopped on the way out through a pid file - a pattern match at cleanup time also matches the
+	# shell running it.
+	@rm -f /tmp/rtc-bench-sfu.pid
+	@cd lab/sfu && ( exec $(PWD)/bin/sfu -addr :$(WS_PORT) -udp-mux-port $(MUX_PORT) -advertise-ip 127.0.0.1 >/tmp/rtc-bench-sfu.log 2>&1 </dev/null & echo $$! > /tmp/rtc-bench-sfu.pid )
+	@for i in $$(seq 1 40); do (exec 3<>/dev/tcp/127.0.0.1/$(WS_PORT)) 2>/dev/null && break || sleep 0.25; done; \
+	timeout 120 ./bin/bench -url ws://127.0.0.1:$(WS_PORT)/websocket -clients 3 -duration 10s; rc=$$?; \
+	kill "$$(cat /tmp/rtc-bench-sfu.pid)" 2>/dev/null; rm -f /tmp/rtc-bench-sfu.pid; exit $$rc
 
 COMPOSE ?= docker compose
 IMAGE_NAME ?= rtc-media-bench:local

@@ -22,7 +22,7 @@ import (
 
 func main() {
 	var (
-		url      = flag.String("url", "ws://127.0.0.1:8080/websocket", "SFU websocket signalling address")
+		url      = flag.String("url", "ws://127.0.0.1:17880/websocket", "SFU websocket signalling address")
 		sample   = flag.String("sample", "testdata/sample.ivf", "VP8 .ivf published by every participant")
 		clients  = flag.Int("clients", 3, "how many participants to join")
 		duration = flag.Duration("duration", 10*time.Second, "how long to stay in the room")
