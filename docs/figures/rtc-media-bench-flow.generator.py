@@ -179,7 +179,7 @@ meta = ('<!-- diagram-meta {"topic":"rtc-media-bench-flow","level":"runtime","ty
         '"charts/sfu/templates/networkpolicy.yaml","internal/rtc/client.go","internal/rtc/stats.go","cmd/bench/main.go",'
         '"lab/run-cluster.sh","lab/measure.sh","lab/measure-sfu-cpu.sh","lab/faults/02-media-through-a-service.sh",'
         '"lab/faults/03-advertise-pod-ip.sh","lab/faults/04-restart-without-grace.sh","docs/runbook.md","Dockerfile","docker-compose.yml","Makefile"],'
-        '"updated":"2026-10-12"} -->')
+        '"updated":"2026-10-19"} -->')
 
 page = f"""{meta}
 <!DOCTYPE html>

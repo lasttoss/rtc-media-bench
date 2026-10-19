@@ -40,6 +40,37 @@ bench: build ## Join 3 participants and print the table (host, no container)
 	timeout 120 ./bin/bench -url ws://127.0.0.1:$(WS_PORT)/websocket -clients 3 -duration 10s; rc=$$?; \
 	kill "$$(cat /tmp/rtc-bench-sfu.pid)" 2>/dev/null; rm -f /tmp/rtc-bench-sfu.pid; exit $$rc
 
+.PHONY: sfu
+sfu: build ## Run the SFU on the host, in the foreground, on one multiplexed UDP port
+	# $(PWD), not ../bin/sfu: the old target ran `cd lab/sfu && ../bin/sfu`, which is lab/bin/sfu and
+	# has never existed. The harness and the SFU are both built into bin/.
+	@cd lab/sfu && exec $(PWD)/bin/sfu -addr :$(WS_PORT) -udp-mux-port $(MUX_PORT) -advertise-ip 127.0.0.1
+
+.PHONY: measure
+measure: build ## Run the ICE comparison, into lab/evidence/
+	# Each run starts its own SFU and refuses to report on one it did not start, so the two
+	# configurations cannot borrow each other's server.
+	@SFU_BIN=$(PWD)/bin/sfu BENCH_BIN=$(PWD)/bin/bench WS_PORT=$(WS_PORT) MUX_PORT=$(MUX_PORT) \
+	  ./lab/measure.sh mux-all-interfaces 3 10s -udp-mux-port $(MUX_PORT)
+	@SFU_BIN=$(PWD)/bin/sfu BENCH_BIN=$(PWD)/bin/bench WS_PORT=$(WS_PORT) MUX_PORT=$(MUX_PORT) \
+	  ./lab/measure.sh mux-advertised 3 10s -udp-mux-port $(MUX_PORT) -advertise-ip 127.0.0.1
+
+.PHONY: verify-sfu
+verify-sfu: build ## Assert the vendored SFU's ICE flags reach the peer connection
+	@SFU_BIN=$(PWD)/bin/sfu WS_PORT=$(WS_PORT) MUX_PORT=$(MUX_PORT) ./lab/check-ice-config.sh
+
+.PHONY: verify-patch
+verify-patch: ## Rebuild lab/sfu from upstream at the pinned commit and check it matches
+	@./lab/verify-patch.sh
+
+.PHONY: demo
+demo: build chart-check verify-sfu ## One command, no cluster and no credentials: build, validate, measure
+	@echo
+	@echo "== measuring on loopback: every interface advertised vs one =="
+	@SFU_BIN=$(PWD)/bin/sfu BENCH_BIN=$(PWD)/bin/bench WS_PORT=$(WS_PORT) MUX_PORT=$(MUX_PORT) \
+	  ./lab/measure.sh mux-advertised 3 6s -udp-mux-port $(MUX_PORT) -advertise-ip 127.0.0.1
+	@echo "  (the chart and the vendored patch were checked above; lab-up brings up the cluster)"
+
 COMPOSE ?= docker compose
 IMAGE_NAME ?= rtc-media-bench:local
 
