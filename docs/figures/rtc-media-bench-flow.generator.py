@@ -154,7 +154,7 @@ svg.append(FAULTS.render(x3, faults_y))
 
 svg.append(arrow(x1 + col1, client_y + 46, x2, sfu_y + 40, "signalling"))
 svg.append(arrow(x2 + col2, sfu_y + 40, x3, good_y + 30, "media"))
-svg.append(text(MARGIN, H - 16, "make lab-up  ·  make measure  ·  lab/faults/*.sh  — every number here comes from one of these",
+svg.append(text(MARGIN, H - 16, "make lab-up  ·  make measure  ·  make readme-check  ·  lab/faults/*.sh  — every number here comes from one of these, and every command this README names is checked",
                 size=11, fill=MUTED, family="mono"))
 svg.append(rect(MARGIN, strip_y, total_w - MARGIN * 2, strip_h))
 svg.append(text(MARGIN + PAD, strip_y + 26, "three rules this repository keeps, each one because breaking it produced a wrong number",
