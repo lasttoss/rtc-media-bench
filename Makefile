@@ -125,9 +125,24 @@ chart-check: ## Lint and render every branch of the chart, then validate it
 	@./lab/chart-check.sh
 
 .PHONY: diagram
-diagram: ## Regenerate the figure and fail if the export is older than its sources
+diagram: ## Regenerate the figure, re-export it, and check it against the sources it names
+	# The checker is in this repository, not on the machine of whoever drew the figure. It used to be
+	# ~/.pi/agent/scripts/diagram-freshness.sh, piped through grep, which meant the gate the README
+	# describes could not run in a clean clone - and a pipe would have hidden its exit code anyway.
 	@python3 docs/figures/rtc-media-bench-flow.generator.py
-	@bash ~/.pi/agent/scripts/diagram-freshness.sh 2>/dev/null | grep -E "FRESH|STALE|TOUCHED|NO-META" | sed 's/^/  /'
+	@python3 scripts/export-figure.py docs/figures/rtc-media-bench-flow.html
+	@python3 scripts/diagram-freshness.py .
+
+# Every command this README names has to resolve, and the ones that need no cluster are run. Entries
+# are ';'-separated; a leading '!' means the command must fail. What cannot run here is printed with
+# the reason rather than skipped in silence.
+README_RUN ?= make diagram; make test; make demo; make measure
+README_SKIP ?= make lab-up | a kind cluster, Calico and two images; make lab-bench | measures against that cluster; make up | the same two binaries as containers; make down | stops them; make compose-bench | measures through the containerised SFU; make image | builds the image and runs it; make test-integration | two real participants through the vendored SFU: the harness job does it
+
+.PHONY: readme-check
+readme-check: build ## Every command this README names resolves, and the offline ones are run
+	@README_RUN='$(README_RUN)' README_SKIP='$(README_SKIP)' python3 scripts/readme-check.py .
+
 
 .PHONY: lab-up
 lab-up: build ## kind cluster + Calico + images + chart

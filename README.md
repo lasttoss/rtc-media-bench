@@ -20,6 +20,7 @@ make measure      # the ICE comparison, into lab/evidence/
 make verify-sfu   # assert the vendor patch reaches the peer connection
 make test-integration  # two real participants through the real SFU, as a test
 make verify-patch # re-derive the vendored SFU from upstream and diff it
+make readme-check # every command named in this file resolves, and the offline ones are run
 ```
 
 ## Two ways to run the lab
@@ -143,8 +144,9 @@ The chart's most important value is not a resource limit - it is how media leave
 | `docker-compose.yml` | n/a | this is a cluster lab: `make lab-up` is the one-command path, and `make demo` runs without a cluster at all |
 | `Dockerfile` | ✅ | two of them, both distroless nonroot: the SFU built from the vendored source, and the harness as an image so a load test can run inside the cluster |
 | Helm chart | ✅ | `charts/sfu`: Deployment, Service, NetworkPolicy on by default; every branch rendered and validated in CI |
-| `docs/figures/` + freshness gate | ✅ | `rtc-media-bench-flow` with `diagram-meta`; `make diagram` fails on a stale export |
+| `docs/figures/` + freshness gate | ✅ | `rtc-media-bench-flow` with `diagram-meta`; `make diagram` fails on a stale export; the `.png` export is checked against the `.html` it came from, and the checker is in `scripts/`, so CI runs it |
 | tests + coverage in CI | ✅ | unit tests need no cluster, no network and no credentials; `make test-integration` puts two real participants through the vendored SFU (78% of the client code, against 22.5% without it), and `lab/check-ice-config.sh` fails unless the ICE flags reach the peer connection |
+| documented commands | ✅ | `make readme-check` resolves every command this file names and runs the ones that need no cluster; a `~/` path in a recipe fails, because a target that needs one machine is not a target |
 | README with what it demonstrates | ✅ | this file, with the numbers and their provenance |
 
 ## Licence
